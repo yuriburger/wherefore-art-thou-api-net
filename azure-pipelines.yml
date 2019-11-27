@@ -1,0 +1,81 @@
+# ASP.NET Core
+# Build and test ASP.NET Core projects targeting .NET Core.
+# Add steps that run tests, create a NuGet package, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+trigger:
+- none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  APPCONFIG_KEY: $(APPCONFIGURATION_KEY)
+  INSTRUMENTATION_KEY: $(APPINSIGHTS_KEY)
+
+steps:
+- task: SonarCloudPrepare@1
+  displayName: 'SonarCloud Prepare'
+  enabled: true
+  inputs:
+    SonarCloud: 'demo-2019-sonar'
+    organization: 'demo-2019'
+    scannerMode: 'MSBuild'
+    projectKey: 'where-fore-art-thou-api'
+    projectName: 'where-fore-art-thou-api'
+
+- task: AzureAppConfiguration@1
+  inputs:
+    azureSubscription: 'wherefore-rg'
+    ConfigstoreName: 'wherefore-config'
+    KeyFilter: '*'
+
+- task: ReplaceTokens@1
+  inputs:
+    sourcePath: 'Wherefore.WebApi/'
+    filePattern: 'appsettings.json'
+    tokenRegex: '#{(\w+)}#'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Build'
+  inputs:
+    command: 'build'
+    arguments: '--configuration $(buildConfiguration)'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Test'
+  enabled: true
+  inputs:
+    command: test
+    projects: '**/*Tests/*.csproj'
+    arguments: '--configuration $(buildConfiguration)'
+
+- task: SonarCloudAnalyze@1
+  displayName: 'SonarCloud Analyze'
+  enabled: true
+
+- task: SonarCloudPublish@1
+  displayName: 'SonarCloud Publish'
+  enabled: true
+  inputs:
+    pollingTimeoutSec: '300'
+  
+- task: DotNetCoreCLI@2
+  displayName: 'Publish'
+  inputs:
+    command: 'publish'
+    publishWebProjects: false
+    projects: './Wherefore.WebApi/Wherefore.WebApi.csproj'
+    arguments: '--configuration $(BuildConfiguration) --output ./Wherefore.WebApi/out /p:Version=1.0.$(Build.BuildID).0'
+    zipAfterPublish: false
+    modifyOutputPath: false
+
+- task: Docker@2
+  displayName: 'Docker build and push'
+  enabled: true
+  inputs:
+    containerRegistry: 'wherefore-acr'
+    repository: 'wherefore-art-thou-api'
+    command: 'buildAndPush'
+    Dockerfile: '**/Dockerfile'
